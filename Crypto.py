@@ -1,5 +1,6 @@
 from cv2 import imread, VideoCapture
 from numpy import concatenate, array
+from PIL.Image import fromarray
 import os
 
 import cv2
@@ -110,6 +111,7 @@ class Steganography:
                 int(binary_string[i+self.bits_resolutions[0]+self.bits_resolutions[1]:i+self.bits_resolutions[0]+self.bits_resolutions[1]+self.bits_resolutions[2]], 2)))
             i += sum(self.bits_resolutions)
         meta_data_list = [count] + resolutions
+        print(meta_data_list)
         limit = sum([a[0]*a[1]*a[2] for a in resolutions])*self.bits_pixel+sum(self.bits_resolutions)
         print("Meta-Data Inversion Complete: [","="*20+"]")
         data_list = []
@@ -161,6 +163,14 @@ class Steganography:
         percent = (percent//5)+1
         print(name,"["+"="*percent+">"+("-"*(20-percent))+"]",str(percent)+"/20", end='\r')
 
+    def save_frame_list(self, image_list, folder_loc = "?", image_name = "img"):
+        if(folder_loc == "?"):
+            folder_loc = os.pathsep.join(self.cache_loc.split(os.pathsep)[0:-1])
+        for i, image in enumerate(image_list):
+            cv2.imwrite(os.path.join(folder_loc, str(image_name+"_"+str(i)+".jpg")),image)
+        
+
+
     def encode(self, frame_list, image_list, bits = 1):
         # Initialization of input frames
         frame_count = len(frame_list)
@@ -191,7 +201,6 @@ class Steganography:
         # Embed the binary
         pixel_arr = self.embed(pixel_arr, binary_string, bits)
 
-
         # Reconstruct the input frames
         frame_list = []
         for i in range(0,frame_count):
@@ -199,6 +208,7 @@ class Steganography:
             temp_arr = pixel_arr[0:total_pixel]
             frame_list.append(temp_arr.reshape(frame_shape[i]))
             pixel_arr = pixel_arr[total_pixel:]
+        
         return frame_list
     
     def decode(self, frame_list, bits = 1):
@@ -281,18 +291,20 @@ class Steganography:
         # Prepare the image directory into a list of frames
         dir_list = [os.path.join(img_dir, loc) for loc in os.listdir(img_dir)]
         img_list = [imread(path) for path in dir_list]
-
         dir_list = [os.path.join(en_dir, loc) for loc in os.listdir(en_dir)]
         en_list = [imread(path) for path in dir_list]
 
-        return self.encode(img_list, en_list, bits)
+        result = self.encode(img_list, en_list, bits)
+        self.save_frame_list(result, "images/output", "output")
+        return "images/output"
     
     def decode_image_dir(self, img_dir, bits):
         # Prepare the image directory into a list of frames
         dir_list = [os.path.join(img_dir, loc) for loc in os.listdir(img_dir)]
         img_list = [imread(path) for path in dir_list]
-
-        return self.decode(img_list, bits)
+        result = self.decode(img_list, bits)
+        self.save_frame_list(result, "images/output_secret", "secret")
+        return "images/output_secret"
     
 
     
