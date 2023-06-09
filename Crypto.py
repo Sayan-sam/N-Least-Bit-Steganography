@@ -3,6 +3,7 @@ from numpy import concatenate, array
 import os
 
 import cv2
+import matplotlib.pyplot as plt
 
 class Steganography:
     
@@ -32,6 +33,7 @@ class Steganography:
         self.bits_img_count = 4 # Number of bits for storing the number of images count
         self.bits_resolutions = [12,12,2] # Number of bits for storing the resolution of the image (height, width, channels)
         self.bits_pixel = 8 # Number of bits for storing the pixel value of our image
+        self.cache_loc = "temp/temp.steg" # Location of the cache file for storing temp data
     
     def config(self, count, res, pix):
         self.bits_resolutions = res
@@ -59,17 +61,41 @@ class Steganography:
 
 
     def binary_conversion(self,meta_data_list, data_list):
-        res = ""
+
+        # res = ""
+        file = open(self.cache_loc, 'w')
         count = meta_data_list[0]
-        res += self.fill_zeros(bin(count)[2:],self.bits_img_count)
+        # res += self.fill_zeros(bin(count)[2:],self.bits_img_count)
+        file.write(self.fill_zeros(bin(count)[2:],self.bits_img_count))
         i = 1
         while(i <= count):
+            print("Meta-Data Conversion Progress: ",i,"/",count, end='\r')
+            """
             res += self.fill_zeros(bin(meta_data_list[i][0])[2:], self.bits_resolutions[0])
             res += self.fill_zeros(bin(meta_data_list[i][1])[2:], self.bits_resolutions[1])
             res += self.fill_zeros(bin(meta_data_list[i][2])[2:], self.bits_resolutions[2])
+            """
+            file.write(self.fill_zeros(bin(meta_data_list[i][0])[2:], self.bits_resolutions[0]))
+            file.write(self.fill_zeros(bin(meta_data_list[i][1])[2:], self.bits_resolutions[1]))
+            file.write(self.fill_zeros(bin(meta_data_list[i][2])[2:], self.bits_resolutions[2]))
+            
             i += 1
-        for data in data_list:
-            res += self.fill_zeros(bin(data)[2:], self.bits_pixel)
+        print("Meta-Data Conversion Complete: [","="*20+"]")
+        temp_percent = 0
+        for i, data in enumerate(data_list):
+            percent = (i*100)//len(data_list)
+            if percent > temp_percent:
+                self.print_progress(percent, "Data Conversion Progress:")
+                temp_percent = percent
+            # res += self.fill_zeros(bin(data)[2:], self.bits_pixel)
+            file.write(self.fill_zeros(bin(data)[2:], self.bits_pixel))
+        file.close()
+        file = open(self.cache_loc, 'r')
+        res = file.read()
+        file.close()
+        print("Data Conversion Complete: [","="*20+"]")
+        if os.path.exists(self.cache_loc):
+            os.remove(self.cache_loc)
         return res
 
     def binary_inversion(self,binary_string):
@@ -77,6 +103,7 @@ class Steganography:
         resolutions = []
         i = self.bits_img_count
         while(i <= count*sum(self.bits_resolutions)):
+            print(" ",i,"/",count*sum(self.bits_resolutions), end='\r')
             resolutions.append(
                 (int(binary_string[i:i+self.bits_resolutions[0]], 2),
                 int(binary_string[i+self.bits_resolutions[0]:i+self.bits_resolutions[0]+self.bits_resolutions[1]], 2),
@@ -84,39 +111,81 @@ class Steganography:
             i += sum(self.bits_resolutions)
         meta_data_list = [count] + resolutions
         limit = sum([a[0]*a[1]*a[2] for a in resolutions])*self.bits_pixel+sum(self.bits_resolutions)
-        
-        # i -= sum(bits_resolutions)
+        print("Meta-Data Inversion Complete: [","="*20+"]")
         data_list = []
+        temp_percent = 0
         for j in range(i, limit, self.bits_pixel):
+            percent = (j*100)//limit
+            if percent > temp_percent:
+                self.print_progress(percent, "Data Inversion Progress:")
+                temp_percent = percent
             data_list.append(int(binary_string[j:j+self.bits_pixel],2))
-
+        print("Data Inversion Complete: [","="*20+"]")
         return meta_data_list, data_list
             
 
     def embed(self, arr, binary_string, bits):
         chunks = [binary_string[i:i+bits] for i in range(0, len(binary_string), bits)]
+        temp_percent = 0
         for i,chunk in enumerate(chunks):
+            percent = (i*100)//len(chunks)
+            if percent > temp_percent:
+                self.print_progress(percent, "Embedding Progress:")
+                temp_percent = percent
             arr[i] = ((arr[i]>>bits)<<bits) | int(chunk, 2)
+        print("Embedding Complete: [","="*20+"]")
         return arr
 
     def extract(self, arr, bits):
-        res = ""
-        for val in arr.tolist():
-            res += self.fill_zeros(bin(val&((2**bits)-1))[2:],bits)
+
+        # res = ""
+        file = open(self.cache_loc, 'w')
+        temp_percent = 0
+        for i, val in enumerate(arr.tolist()):
+            percent = (i*100)//len(arr)
+            if percent > temp_percent:
+                self.print_progress(percent, "Extracting Progress:")
+                temp_percent = percent
+            # res += self.fill_zeros(bin(val&((2**bits)-1))[2:],bits)
+            file.write(self.fill_zeros(bin(val&((2**bits)-1))[2:],bits))
+        print("Extraction Complete: [","="*20+"]")
+        file.close()
+        file = open(self.cache_loc, 'r')
+        res = file.read()
+        file.close()
+        if os.path.exists(self.cache_loc):
+            os.remove(self.cache_loc)
         return res
     
+    def print_progress(self, percent, name = "Progress: "):
+        percent = (percent//5)+1
+        print(name,"["+"="*percent+">"+("-"*(20-percent))+"]",str(percent)+"/20", end='\r')
+
     def encode(self, frame_list, image_list, bits = 1):
         # Initialization of input frames
         frame_count = len(frame_list)
-        frame_shape = self.check_frame_shape(frame_list[0].shape)
+        frame_shape = [self.check_frame_shape(image_frame.shape) for image_frame in frame_list]
+        # frame_shape = self.check_frame_shape(frame_list[0].shape)
         pixel_arr = self.flatten(frame_list)
 
         # Get the parameters for the global variables | Number of Images | Resolutions of Each Image
         meta_data_list = [len(image_list)]+[self.check_frame_shape(image.shape) for image in image_list]
 
-        # Convert the images to be encoded into a list of binary values
+        # Convert the images to be encoded into a list of values
         data_list = self.flatten(image_list)
 
+        # Calculation for the possiblilty of encoding
+        data_count = len(data_list)*self.bits_pixel + (len(meta_data_list)-1)*sum(self.bits_resolutions) + self.bits_img_count
+        image_count = len(pixel_arr)*bits
+        print("Image count: ", image_count, "Data count: ", data_count)
+        if(image_count < data_count):
+            print("Encoding Not Possible!!")
+            raise ValueError("Encoding Not Possible as Values are less than required")
+        else: 
+            print("Encoding Possible!!")
+            print("Percent: ",(data_count/image_count)*100)
+
+        # Converting the list of values into binary string
         binary_string = self.binary_conversion(meta_data_list, data_list)
         
         # Embed the binary
@@ -125,9 +194,11 @@ class Steganography:
 
         # Reconstruct the input frames
         frame_list = []
-        total_pixel = frame_shape[0]*frame_shape[1]*frame_shape[2]
         for i in range(0,frame_count):
-            frame_list.append(pixel_arr[i*total_pixel:(i+1)*total_pixel].reshape(frame_shape))
+            total_pixel = frame_shape[i][0]*frame_shape[i][1]*frame_shape[i][2]
+            temp_arr = pixel_arr[0:total_pixel]
+            frame_list.append(temp_arr.reshape(frame_shape[i]))
+            pixel_arr = pixel_arr[total_pixel:]
         return frame_list
     
     def decode(self, frame_list, bits = 1):
@@ -162,16 +233,18 @@ class Steganography:
     
     def encode_video(self, video_loc:str, img_dir:str, bits = 2):
         # Preprare the video to list of frames
-        capture = VideoCapture(video_loc)
+        capture = VideoCapture(video_loc, apiPreference=cv2.CAP_MSMF)
         frame_rate = capture.get(cv2.CAP_PROP_FPS)
+        print("Frame rate: ",frame_rate)
         image_list = []
         while (True):
-            ret, frame = capture.next()
+            ret, frame = capture.read()
             if ret:
                 image_list.append(frame)
             else:
                 break
         shape = image_list[0].shape
+        print("Image shape: ",shape)
 
         # Prepare the image directory into a list of frames
         dir_list = [os.path.join(img_dir, loc) for loc in os.listdir(img_dir)]
@@ -181,8 +254,14 @@ class Steganography:
         image_list = self.encode(image_list, en_img_list, bits = bits)
 
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        video_output = cv2.VideoWriter()
+        video_output = cv2.VideoWriter(str(video_loc.split(".")[0]+str("_encoded.mp4")),fourcc, frame_rate, (shape[1],shape[0]))
 
+        for image in image_list:
+            video_output.write(image)
+        
+        cv2.destroyAllWindows()
+        video_output.release()
+        return str(video_loc.split(".")[0]+str("_encoded.mp4"))
 
 
     
@@ -190,7 +269,7 @@ class Steganography:
         capture = VideoCapture(video_loc)
         image_list = []
         while (True):
-            ret, frame = capture.next()
+            ret, frame = capture.read()
             if ret:
                 image_list.append(frame)
             else:
@@ -198,7 +277,22 @@ class Steganography:
         
         return self.decode(image_list, bits)
 
+    def encode_image_dir(self, img_dir, en_dir, bits = 2):
+        # Prepare the image directory into a list of frames
+        dir_list = [os.path.join(img_dir, loc) for loc in os.listdir(img_dir)]
+        img_list = [imread(path) for path in dir_list]
 
+        dir_list = [os.path.join(en_dir, loc) for loc in os.listdir(en_dir)]
+        en_list = [imread(path) for path in dir_list]
+
+        return self.encode(img_list, en_list, bits)
+    
+    def decode_image_dir(self, img_dir, bits):
+        # Prepare the image directory into a list of frames
+        dir_list = [os.path.join(img_dir, loc) for loc in os.listdir(img_dir)]
+        img_list = [imread(path) for path in dir_list]
+
+        return self.decode(img_list, bits)
     
 
     
