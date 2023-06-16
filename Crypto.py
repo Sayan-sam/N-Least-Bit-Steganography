@@ -1,10 +1,11 @@
-from cv2 import imread, VideoCapture
+from cv2 import VideoCapture, VideoWriter_fourcc, VideoWriter, CAP_PROP_FPS, destroyAllWindows
 from numpy import concatenate, array
 from PIL.Image import fromarray
+from PIL.Image import open as imopen
 import os
 
-import cv2
 import matplotlib.pyplot as plt
+import numpy as np
 
 class Steganography:
     
@@ -112,7 +113,7 @@ class Steganography:
             i += sum(self.bits_resolutions)
         meta_data_list = [count] + resolutions
         print(meta_data_list)
-        limit = sum([a[0]*a[1]*a[2] for a in resolutions])*self.bits_pixel+sum(self.bits_resolutions)
+        limit = sum([a[0]*a[1]*a[2] for a in resolutions])*self.bits_pixel+sum(self.bits_resolutions)*len(resolutions)+self.bits_img_count
         print("Meta-Data Inversion Complete: [","="*20+"]")
         data_list = []
         temp_percent = 0
@@ -163,13 +164,17 @@ class Steganography:
         percent = (percent//5)+1
         print(name,"["+"="*percent+">"+("-"*(20-percent))+"]",str(percent)+"/20", end='\r')
 
-    def save_frame_list(self, image_list, folder_loc = "?", image_name = "img"):
+    def save_frame_list(self, image_list, folder_loc = "?", image_name = "img", format = 'png'):
         if(folder_loc == "?"):
             folder_loc = os.pathsep.join(self.cache_loc.split(os.pathsep)[0:-1])
         for i, image in enumerate(image_list):
-            cv2.imwrite(os.path.join(folder_loc, str(image_name+"_"+str(i)+".jpg")),image)
+            self.imwrite(os.path.join(folder_loc, str(image_name+"_"+str(i)+"."+format)),image)
         
-
+    def imread(self, image_loc):
+        return array(imopen(image_loc), dtype='uint8')
+    
+    def imwrite(self, image_loc, image):
+        fromarray(image.astype('uint8')).save(image_loc)
 
     def encode(self, frame_list, image_list, bits = 1):
         # Initialization of input frames
@@ -233,18 +238,18 @@ class Steganography:
         return image_list
 
     def encode_image(self, img_loc:str, en_img_loc:str, bits = 2):
-        img = imread(img_loc)
-        en_img = imread(en_img_loc)
+        img = self.imread(img_loc)
+        en_img = self.imread(en_img_loc)
         return self.encode([img], [en_img], bits)[0]
     
     def decode_image(self, img_loc:str, bits = 2):
-        img = imread(img_loc)
+        img = self.imread(img_loc)
         return self.decode([img], bits)[0]
     
     def encode_video(self, video_loc:str, img_dir:str, bits = 2):
         # Preprare the video to list of frames
-        capture = VideoCapture(video_loc, apiPreference=cv2.CAP_MSMF)
-        frame_rate = capture.get(cv2.CAP_PROP_FPS)
+        capture = VideoCapture(video_loc)
+        frame_rate = capture.get(CAP_PROP_FPS)
         print("Frame rate: ",frame_rate)
         image_list = []
         while (True):
@@ -253,29 +258,30 @@ class Steganography:
                 image_list.append(frame)
             else:
                 break
+        capture.release()
         shape = image_list[0].shape
         print("Image shape: ",shape)
-
+        
         # Prepare the image directory into a list of frames
         dir_list = [os.path.join(img_dir, loc) for loc in os.listdir(img_dir)]
-        en_img_list = [imread(path) for path in dir_list]
+        en_img_list = [self.imread(path) for path in dir_list]
 
         # Encode the images and form the video
         image_list = self.encode(image_list, en_img_list, bits = bits)
 
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        video_output = cv2.VideoWriter(str(video_loc.split(".")[0]+str("_encoded.mp4")),fourcc, frame_rate, (shape[1],shape[0]))
+        fourcc = VideoWriter_fourcc(*'RGBA')
+        video_output = VideoWriter(str(video_loc.split(".")[0]+str("_encoded.avi")),fourcc, frame_rate, (shape[1],shape[0]))
 
         for image in image_list:
-            video_output.write(image)
+            video_output.write(image.astype(np.uint8))
         
-        cv2.destroyAllWindows()
+        destroyAllWindows()
         video_output.release()
-        return str(video_loc.split(".")[0]+str("_encoded.mp4"))
+        return str(video_loc.split(".")[0]+str("_encoded.avi"))
 
 
     
-    def decode_video(self, video_loc:str, bits = 2):
+    def decode_video(self, video_loc:str,save_dir:str, bits = 2):
         capture = VideoCapture(video_loc)
         image_list = []
         while (True):
@@ -284,27 +290,28 @@ class Steganography:
                 image_list.append(frame)
             else:
                 break
-        
-        return self.decode(image_list, bits)
+        result = self.decode(image_list, bits)
+        self.save_frame_list(result, save_dir, "secret", format = 'jpg')
+        return True
 
     def encode_image_dir(self, img_dir, en_dir, bits = 2):
         # Prepare the image directory into a list of frames
         dir_list = [os.path.join(img_dir, loc) for loc in os.listdir(img_dir)]
-        img_list = [imread(path) for path in dir_list]
+        img_list = [self.imread(path) for path in dir_list]
         dir_list = [os.path.join(en_dir, loc) for loc in os.listdir(en_dir)]
-        en_list = [imread(path) for path in dir_list]
+        en_list = [self.imread(path) for path in dir_list]
 
         result = self.encode(img_list, en_list, bits)
         self.save_frame_list(result, "images/output", "output")
         return "images/output"
     
-    def decode_image_dir(self, img_dir, bits):
+    def decode_image_dir(self, img_dir, save_dir,  bits):
         # Prepare the image directory into a list of frames
         dir_list = [os.path.join(img_dir, loc) for loc in os.listdir(img_dir)]
-        img_list = [imread(path) for path in dir_list]
+        img_list = [self.imread(path) for path in dir_list]
         result = self.decode(img_list, bits)
-        self.save_frame_list(result, "images/output_secret", "secret")
-        return "images/output_secret"
+        self.save_frame_list(result, save_dir, "secret", format = 'jpg')
+        return True
     
 
     
