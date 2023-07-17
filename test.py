@@ -4,10 +4,10 @@ import numpy as np
 import cv2
 
 crypt = Steganography()
-result = crypt.encode_video("videos/vid.mp4", "images/main_secret", 2)
+# result = crypt.encode_image_dir("images/main", "images/main_secret", 2)
 # plt.imshow(result[0])
 # plt.show()
-extract = crypt.decode_video(result, "images/output_secret" ,2)
+extract = crypt.decode_image_dir("images/output", "images/output_secret" ,2)
 # plt.imshow(extract)
 # plt.show()s
 
